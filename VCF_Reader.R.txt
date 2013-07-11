@@ -1,0 +1,208 @@
+source("http://www.bioconductor.org/biocLite.R"); biocLite("VariantAnnotation")
+library("VariantAnnotation")
+library("IRanges")
+library("GenomicRanges")
+library(foreign)
+#####
+
+# To run this script change the setwd()
+setwd("E:\\Illumina\\SA495_IntPassSA501scSA029sc")
+
+# read txt files with names of the form SA494*.vcf
+file_names = list.files(pattern = 'SA49*.*vcf');
+
+# Extract all the VCFs into a concatenated VCF list
+vcf_list = lapply(file_names, readVcf, "hg19", sep = "\t")
+
+createCounter <- function(value) { function(i) { value <<- value+i} }
+count <- createCounter(1)
+
+
+
+#########################################################
+# THIS IS THE CURRENT WORKING MODULE TO EXPERIMENT WITH #
+#########################################################
+
+samples <- length(vcf_list)
+
+
+sumdf <- data.frame(	Sample_ID = rep("", samples),
+			Variants = rep(0, samples),
+			Rows = rep("", samples),
+			stringsAsFactors = FALSE)
+
+for (rj in seq(samples)) 	{
+			sid <- colnames(vcf_list[[rj]])
+			varn <- nrow(vcf_list[[rj]])
+
+sumdf$Samples_ID[rj] <- sid
+sumdf$Variants[rj] <- varn
+
+			
+# For each of the list of samples
+len <- nrow(vcf_list[[rj]])
+
+	if ( len > 0 ){
+		
+
+d.frame <- data.frame(	     ID = rep("", len),
+			     Varalfreq = rep (0, len),
+#			     Seqdepth = rep(0, len),
+			     stringsAsFactors = FALSE)
+
+for (ri in seq(len) ) 	{
+
+	d.frame$ID[ri] <- rownames(vcf_list[[rj]][ri])
+#	d.frame$Calls[ri] <- geno(vcf_list[[rj]][ri])$GT
+	d.frame$Varalfreq[ri] <- geno(vcf_list[[rj]][ri])$VF
+#	d.frame$Seqdepth[ri] <- geno(vcf_list[[rj]][ri])$DP
+
+			} 
+
+# unique freq val or seq depth for summary plot
+# must be the same length as names(d.frame)
+names(d.frame)[2] <- paste(sid)
+
+
+			} else { d.frame <- "NULL" };
+
+assign(paste("Nuclei", rj, sep=""), d.frame)
+
+# for first value 
+	if ( rj == 1 && d.frame != "NULL"  ) {
+		first <- d.frame }
+ 
+# combining successive data.frames
+	if ( rj == 2 && d.frame != "NULL"  ) { 
+		sum1 <- merge(first, d.frame, by="ID", all=TRUE) }
+
+# combining successive data.frames
+	if ( rj > 2 && d.frame != "NULL"  ) { 
+		a <- count(1)
+		sum1 <- merge(sum1, d.frame, by="ID", all=TRUE) 
+		} else { print("skip") }
+
+}
+
+write.table(sum1,file="C:\\Users\\dyap_000\\Documents\\R\\SA494\\SA494-X-freq.csv",sep=",",row.names=FALSE,col.names=TRUE)
+# write.table(obj_name,file="C:\\Users\\dyap_000\\Documents\\R\\SA494\\SA494.csv",sep=",",append=TRUE,row.names=FALSE,col.names=FALSE)
+
+
+###################################
+
+Drawing heatmap
+
+# Must be convert into a data.matrix (non-numeric converted to N/A)
+ef <- data.matrix(sum1[2:ncol(sum1)])
+
+# col headers - unique nuclei
+names(sum1)
+
+# Label rownames with ID
+rownames(ef) <- sum1$ID
+
+# Label according to Samplesheet
+colnames(ef)[1] <- "SA494-X2"
+colnames(ef)[2] <- "SA494-X3"
+
+# heatmap(ef, Rowv=NA, Colv=NA, col = heat.colors(1024), scale="column", margins=c(5,10))
+
+pdf("C:\\Users\\dyap_000\\Documents\\R\\SA494\\SA494-freq.pdf", width=6, height=6)
+heatmap(ef, Rowv=NA, Colv=NA, na.rm=TRUE, main="Variant Freq-SA494 Int Pass (MiSeq Reporter)", xlab="SA494 Samples", ylab="Position", cexCol=0.8, col=rev(heat.colors(1000)))
+dev.off()
+########################################################
+
+
+###################################################
+### code chunk number 1: setup
+###################################################
+options(width=80, prompt = ">", continue = " ")
+
+
+###################################################
+### code chunk number 2: prefilters
+###################################################
+isGermlinePrefilter <- function(x) {
+    grepl("Germline", x, fixed=TRUE)
+    }
+
+notInDbsnpPrefilter <- function(x) {
+    !(grepl("dbsnp", x, fixed=TRUE))
+    }
+
+
+###################################################
+### code chunk number 3: filters
+###################################################
+isSnp <- function(x) {
+    refSnp <- nchar(ref(x)) == 1L
+    a <- alt(x)
+    altSnp <- elementLengths(a) == 1L
+    ai <- unlist(a[altSnp])    # all length 1, so unlisting is 1:1 map
+    altSnp[altSnp] <- nchar(ai) == 1L & (ai %in% c("A", "C", "G", "T"))
+    refSnp & altSnp
+    }
+
+allelicDepth <- function(x) {
+    ##  ratio of AD of the "alternate allele" for the tumor sample
+    ##  OR "reference allele" for normal samples to total reads for
+    ##  the sample should be greater than some threshold (say 0.1,
+    ##  that is: at least 10% of the sample should have the allele
+    ##  of interest)
+    ad <- geno(x)$AD
+    tumorPct <- ad[,1,2,drop=FALSE] / rowSums(ad[,1,,drop=FALSE])
+    normPct <- ad[,2,1, drop=FALSE] / rowSums(ad[,2,,drop=FALSE])
+    test <- (tumorPct > 0.1) | (normPct > 0.1)
+    !is.na(test) & test
+    }
+
+
+###################################################
+### code chunk number 4: createFilterRules
+###################################################
+library(VariantAnnotation)
+prefilters <- FilterRules(list(germline=isGermlinePrefilter,
+                               dbsnp=notInDbsnpPrefilter))
+filters <- FilterRules(list(isSnp=isSnp, AD=allelicDepth))
+
+###################################################
+### code chunk number 5: createFilteredFile
+###################################################
+file.gz     <- system.file("extdata", "chr7-sub.vcf.gz",
+                           package="VariantAnnotation")
+file.gz.tbi <- system.file("extdata", "chr7-sub.vcf.gz.tbi",
+                           package="VariantAnnotation")
+destination.file <- tempfile()
+tabix.file <- TabixFile(file.gz, yieldSize=10000)
+filterVcf(tabix.file,  "hg19", destination.file,
+          prefilters=prefilters, filters=filters, verbose=TRUE)
+
+
+
+###################################################
+### code chunk number 6: mcf7regulatoryRegions (eval = FALSE)
+###################################################
+## library(AnnotationHub)
+## hub <- AnnotationHub()
+##     # paste operation is only for display purposes on a narrow page
+## ctcf.regs <- paste("goldenpath.hg19.encodeDCC.wgEncodeUwTfbs",
+##                    "wgEncodeUwTfbsMcf7CtcfStdPkRep1.narrowPeak_0.0.1.RData",
+##                   sep=".")
+## mcf7.gr <- hub[[ctcf.regs]]
+
+
+###################################################
+### code chunk number 7: findOverlaps (eval = FALSE)
+###################################################
+## vcf <- readVcf(destination.file, "hg19")
+## seqlevels(vcf) <- paste("chr", seqlevels(vcf), sep="")
+## ov.mcf7 <- findOverlaps(vcf, mcf7.gr)
+
+
+###################################################
+### code chunk number 8: locateVariant (eval = FALSE)
+###################################################
+## library(TxDb.Hsapiens.UCSC.hg19.knownGene)
+## txdb <- TxDb.Hsapiens.UCSC.hg19.knownGene
+## print(locateVariants(vcf[6,], txdb, AllVariants()))
+
