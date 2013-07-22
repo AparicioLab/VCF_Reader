@@ -3,20 +3,23 @@ library("VariantAnnotation")
 library("IRanges")
 library("GenomicRanges")
 library(foreign)
+library(lattice)
+require(Heatplus)
+library(limma)
 #####
 
 #####################################################################################################
 # To run this script change the setwd()
-setwd("E:\\Illumina\\130520_M00897_0029_000000000-A3EAE\\Data\\Intensities\\BaseCalls\\Alignment7")
-sample="SA494"
-run="A3EAE"
+setwd("C:\\Users\\dyap_000\\Documents\\R\\Cell_Lines_QC")
+sample="S"
+run="A4HU0"
 #check="depth"
 check = "freq"
 #check = "calls"
 
 # Outputs
 # system('mkdir C:\\Users\\dyap_000\\Documents\\R\\SA494')
-dir="C:\\Users\\dyap_000\\Documents\\R\\SA494"
+dir="C:\\Users\\dyap_000\\Documents\\R\\Cell_Lines_QC"
 
 runname=paste(run,"run",sep="-")
 exptname=paste(sample,runname,sep="_")
@@ -31,7 +34,7 @@ pdffile=paste(output, "pdf", sep=".")
 vennfile=paste(output, "Venn.pdf", sep="-")
 
 title=filename
-xaxislab=paste(sample, "Nuclei", sep=" ")
+xaxislab=paste(sample, "Sample", sep=" ")
 
 ####################################################################################################
 
@@ -133,47 +136,61 @@ ef <- data.matrix(sum1[2:ncol(sum1)])
 # col headers - unique nuclei
 names(sum1)
 
-
-
-filt <-rownames(ef[rowSums(is.na(ef))==5,])
-
+# Filters out all the positions that failed in all samples
+indiv=length(sum1)-1
+filt <-rownames(ef[rowSums(is.na(ef))==indiv,])
+filt
 
 # Label rownames with ID
 rownames(ef) <- sum1$ID
 
 colnames(ef)
+ff<-ef[,order(as.numeric(colnames(ef)))]
+
+# If fiolt=NULL then all primers work so NA = zero
+ff[is.na(ff)] <- 0
 
 ##############################################
 
 # Label according to samplesheet
-colnames(ef)[1] = "SA494-T"
-colnames(ef)[2] = "SA494-N"
-colnames(ef)[3] = "SA494-X4nonWGA"
-colnames(ef)[4] = "SA494-X4x3"
-colnames(ef)[5] = "SA494-X4"
+# Since S1=1, we leave it for Cell lines
+#colnames(ef)[1] = "SA494-T"
+#colnames(ef)[2] = "SA494-N"
+#colnames(ef)[3] = "SA494-X4nonWGA"
+#colnames(ef)[4] = "SA494-X4x3"
+#colnames(ef)[5] = "SA494-X4"
 
 # Venn Diagram
-attach(ef)
-Tumour <- (ef[,1] >= 0.2)
-Normal <- (ef[,2] >= 0.2)
-X4_nonWGA <- (ef[,3] >= 0.2)
-X4_triplex <- (ef[,4] >= 0.2)
-X4_Single <- (ef[,5] >= 0.2)
+#Tumour <- (ef[,1] >= 0.2)
+#Normal <- (ef[,2] >= 0.2)
+#X4_nonWGA <- (ef[,3] >= 0.2)
+#X4_triplex <- (ef[,4] >= 0.2)
+#X4_Single <- (ef[,5] >= 0.2)
 #c3 <- cbind(Tumour,Normal,X4_nonWGA,X4_triplex,X4_Single)
-c3 <- cbind(X4_Single,X4_triplex)
-a <- vennCounts(c3)
-pdf(vennfile, width=6, height=6)
-vennDiagram(a, main="Variant SNV positions SA494 > 0.2 Alt Allele Freq")
+#c3 <- cbind(X4_Single,X4_triplex)
+#a <- vennCounts(c3)
+#pdf(vennfile, width=6, height=6)
+#vennDiagram(a, main="Variant SNV positions SA494 > 0.2 Alt Allele Freq")
 #vennDiagram(a, include = "both", 
  # names = c("High Writing", "High Math", "High Reading"), 
  # cex = 1, counts.col = "red")
-dev.off()
+#dev.off()
 
 # heatmap(ef, Rowv=NA, Colv=NA, col = heat.colors(1024), scale="column", margins=c(5,10))
+hmcols<-colorRampPalette(c("dark green","red"))(100)
+
+title="Level Plot QC of HCT116-hTert mixing expt"
 
 pdf(pdffile, width=6, height=6)
-heatmap(ef, Rowv=NA, Colv=NA, na.rm=TRUE, main=title, xlab=xaxislab, ylab="Position", cexCol=0.8, col=rev(heat.colors(1000)))
+levelplot(ff, main=title, xlab=xaxislab, ylab="Position", aspect="fill", cexCol=0.8, col.regions = hmcols)
 dev.off()
+
+
+pdf(pdffile, width=6, height=6)
+reg2 = regHeatmap(ff, legend=2,breaks=-4:4)
+plot(reg2)
+dev.off()
+
 
 ########################################################
 
